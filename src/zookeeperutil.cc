@@ -45,6 +45,7 @@ void ZkClient::Start() {
     */
 
     // 使用zookeeper_init初始化一个ZooKeeper客户端对象，异步建立与服务器的连接
+    // global_watcher会唤醒下面的cv.wait
     m_zhandle = zookeeper_init(connstr.c_str(), global_watcher, 6000, nullptr, nullptr, 0);
     if (nullptr == m_zhandle) {  // 初始化失败
         LOG(ERROR) << "zookeeper_init error";
@@ -53,6 +54,13 @@ void ZkClient::Start() {
 
     // 等待连接成功
     std::unique_lock<std::mutex> lock(cv_mutex);
+    /*
+    等价写法：
+    while(!is_connected){
+        cv.wait(lock);
+    }
+    is_connected = true,也就是连接成功后才会往下执行
+    */
     cv.wait(lock, [] { return is_connected; });  // 阻塞等待，直到连接成功
     LOG(INFO) << "zookeeper_init success";  // 记录日志，表示连接成功
 }
@@ -64,18 +72,22 @@ void ZkClient::Create(const char *path, const char *data, int datalen, int state
 
     // 检查节点是否已经存在
     int flag = zoo_exists(m_zhandle, path, 0, nullptr);
-    if (flag == ZNONODE) {  // 如果节点不存在
-        // 创建指定的ZooKeeper节点
-        flag = zoo_create(m_zhandle, path, data, datalen, &ZOO_OPEN_ACL_UNSAFE, state, path_buffer, bufferlen);
-        if (flag == ZOK) {  // 创建成功
-            LOG(INFO) << "znode create success... path:" << path;
-        } else {  // 创建失败
-            LOG(ERROR) << "znode create failed... path:" << path;
-            exit(EXIT_FAILURE);  // 退出程序
-        }
+    // 如果节点已经存在
+    if (flag != ZNONODE) {  
+        LOG(WARNING) << "znode exists... path:" << path;
+        return;  // 直接返回
     }
-}
+    // 创建指定的ZooKeeper节点
+    flag = zoo_create(m_zhandle, path, data, datalen, &ZOO_OPEN_ACL_UNSAFE, state, path_buffer, bufferlen);
+    
+    // 创建失败
+    if (flag != ZOK) {
+        LOG(ERROR) << "znode create failed... path:" << path;
+        exit(EXIT_FAILURE);  // 退出程序
+    }
 
+    LOG(INFO) << "znode create success... path:" << path;
+}
 // 获取ZooKeeper节点的数据
 std::string ZkClient::GetData(const char *path) {
     char buf[64];  // 用于存储节点数据
@@ -86,8 +98,7 @@ std::string ZkClient::GetData(const char *path) {
     if (flag != ZOK) {  // 获取失败
         LOG(ERROR) << "zoo_get error";
         return "";  // 返回空字符串
-    } else {  // 获取成功
-        return buf;  // 返回节点数据
     }
-    return "";  // 默认返回空字符串
+    // 获取成功
+    return buf;  // 返回节点数据
 }

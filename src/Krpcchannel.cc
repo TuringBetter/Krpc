@@ -40,20 +40,18 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
         if (!rt) {
             LOG(ERROR) << "connect server error";  // 连接失败，记录错误日志
             return;
-        } else {
-            LOG(INFO) << "connect server success";  // 连接成功，记录日志
         }
+        LOG(INFO) << "connect server success";  // 连接成功，记录日志
     }  // endif
 
     // 将请求参数序列化为字符串，并计算其长度
     uint32_t args_size{};
     std::string args_str;
-    if (request->SerializeToString(&args_str)) {  // 序列化请求参数
-        args_size = args_str.size();  // 获取序列化后的长度
-    } else {
+    if (!request->SerializeToString(&args_str)) {  // 序列化请求参数
         controller->SetFailed("serialize request fail");  // 序列化失败，设置错误信息
         return;
     }
+    args_size = args_str.size();  // 获取序列化后的长度
 
     // 定义RPC请求的头部信息
     Krpc::RpcHeader krpcheader;
@@ -64,12 +62,11 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
     // 将RPC头部信息序列化为字符串，并计算其长度
     uint32_t header_size = 0;
     std::string rpc_header_str;
-    if (krpcheader.SerializeToString(&rpc_header_str)) {  // 序列化头部信息
-        header_size = rpc_header_str.size();  // 获取序列化后的长度
-    } else {
+    if (!krpcheader.SerializeToString(&rpc_header_str)) {  // 序列化头部信息
         controller->SetFailed("serialize rpc header error!");  // 序列化失败，设置错误信息
         return;
     }
+    header_size = rpc_header_str.size();  // 获取序列化后的长度
 
     // 将头部长度和头部信息拼接成完整的RPC请求报文
     std::string send_rpc_str;
@@ -91,6 +88,7 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
     }
 
     // 接收服务器的响应
+    // 使用固定大小的缓冲区接收响应数据，待优化
     char recv_buf[1024] = {0};
     int recv_size = 0;
     if (-1 == (recv_size = recv(m_clientfd, recv_buf, 1024, 0))) {
@@ -146,6 +144,7 @@ bool KrpcChannel::newConnect(const char *ip, uint16_t port) {
 std::string KrpcChannel::QueryServiceHost(ZkClient *zkclient, std::string service_name, std::string method_name, int &idx) {
     std::string method_path = "/" + service_name + "/" + method_name;  // 构造ZooKeeper路径
     std::cout << "method_path: " << method_path << std::endl;
+    LOG(INFO) << "method_path: " << method_path;
 
     std::unique_lock<std::mutex> lock(g_data_mutx);  // 加锁，保证线程安全
     std::string host_data_1 = zkclient->GetData(method_path.c_str());  // 从ZooKeeper获取数据

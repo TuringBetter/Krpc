@@ -54,7 +54,9 @@ void KrpcProvider::Run() {
     std::shared_ptr<muduo::net::TcpServer> server = std::make_shared<muduo::net::TcpServer>(&event_loop, address, "KrpcProvider");
 
     // 绑定连接回调和消息回调，分离网络连接业务和消息处理业务
+    // TCP 连接的状态发生变化（建立 或 断开）时，都会触发该回调。
     server->setConnectionCallback(std::bind(&KrpcProvider::OnConnection, this, std::placeholders::_1));
+    // socket 可读时，在 TcpConnection::handleRead 成功读取到字节后调用 messageCallback。
     server->setMessageCallback(std::bind(&KrpcProvider::OnMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
     // 设置muduo库的线程数量
@@ -78,7 +80,7 @@ void KrpcProvider::Run() {
     }
 
     // RPC服务端准备启动，打印信息
-    std::cout << "RpcProvider start service at ip:" << ip << " port:" << port << std::endl;
+    KrpcLogger::Info("KrpcProvider start service at ip:" + ip + " port:" + std::to_string(port));
 
     // 启动网络服务
     server->start();
@@ -90,13 +92,15 @@ void KrpcProvider::OnConnection(const muduo::net::TcpConnectionPtr &conn) {
     if (!conn->connected()) {
         // 如果连接关闭，则断开连接
         conn->shutdown();
+        KrpcLogger::Info("client disconnected!");
     }
+    else// 连接建立成功
+        KrpcLogger::Info("client connected!");
 }
 
 // 消息回调函数，处理客户端发送的RPC请求
 void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::net::Buffer *buffer, muduo::Timestamp receive_time) {
-    std::cout << "OnMessage" << std::endl;
-
+    KrpcLogger::Info("receive message from client!");
     // 从网络缓冲区中读取远程RPC调用请求的字符流
     std::string recv_buf = buffer->retrieveAllAsString();
 
@@ -110,9 +114,6 @@ void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::ne
     // 根据header_size读取数据头的原始字符流，反序列化数据，得到RPC请求的详细信息
     std::string rpc_header_str;
     Krpc::RpcHeader krpcHeader;
-    std::string service_name;
-    std::string method_name;
-    uint32_t args_size{};
 
     // 设置读取限制
     google::protobuf::io::CodedInputStream::Limit msg_limit = coded_input.PushLimit(header_size);
@@ -120,14 +121,14 @@ void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::ne
     // 恢复之前的限制，以便安全地继续读取其他数据
     coded_input.PopLimit(msg_limit);
 
-    if (krpcHeader.ParseFromString(rpc_header_str)) {
-        service_name = krpcHeader.service_name();
-        method_name = krpcHeader.method_name();
-        args_size = krpcHeader.args_size();
-    } else {
+    if (!krpcHeader.ParseFromString(rpc_header_str)) {
         KrpcLogger::ERROR("krpcHeader parse error");
         return;
     }
+    // 从数据头中获取服务名、方法名和参数长度
+    std::string service_name = krpcHeader.service_name();
+    std::string method_name = krpcHeader.method_name();
+    uint32_t args_size = krpcHeader.args_size();
 
     std::string args_str;  // RPC参数
     // 直接读取args_size长度的字符串数据
@@ -140,12 +141,12 @@ void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::ne
     // 获取service对象和method对象
     auto it = service_map.find(service_name);
     if (it == service_map.end()) {
-        std::cout << service_name << " is not exist!" << std::endl;
+        KrpcLogger::ERROR(service_name + " is not exist!");
         return;
     }
     auto mit = it->second.method_map.find(method_name);
     if (mit == it->second.method_map.end()) {
-        std::cout << service_name << "." << method_name << " is not exist!" << std::endl;
+        KrpcLogger::ERROR(service_name + "." + method_name + " is not exist!");
         return;
     }
 
@@ -155,17 +156,22 @@ void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::ne
     // 生成RPC方法调用请求的request和响应的response参数
     google::protobuf::Message *request = service->GetRequestPrototype(method).New();  // 动态创建请求对象
     if (!request->ParseFromString(args_str)) {
-        std::cout << service_name << "." << method_name << " parse error!" << std::endl;
+        KrpcLogger::ERROR(service_name + "." + method_name + " parse error!");
         return;
     }
     google::protobuf::Message *response = service->GetResponsePrototype(method).New();  // 动态创建响应对象
 
-    // 绑定回调函数，用于在方法调用完成后发送响应
-    google::protobuf::Closure *done = google::protobuf::NewCallback<KrpcProvider,
-                                                                    const muduo::net::TcpConnectionPtr &,
-                                                                    google::protobuf::Message *>(this,
-                                                                                                 &KrpcProvider::SendRpcResponse,
-                                                                                                 conn, response);
+    // 绑定回调函数，用于在方法调用完成后发送响应，相当于Protobuf 版的 std::bind
+    google::protobuf::Closure *done = google::protobuf::NewCallback<
+                                          KrpcProvider,                             // 【1】 类的类型
+                                          const muduo::net::TcpConnectionPtr &,     // 【2】 函数参数1的类型
+                                          google::protobuf::Message *               // 【3】 函数参数2的类型
+                                        >(
+                                          this,                                     // 类的实例（对象指针）
+                                          &KrpcProvider::SendRpcResponse,           // 类的成员函数指针
+                                          conn,                                     // 函数参数1的实际值
+                                          response                                  // 函数参数2的实际值
+                                        );
 
     // 在框架上根据远端RPC请求，调用当前RPC节点上发布的方法
     service->CallMethod(method, nullptr, request, response, done);  // 调用服务方法
@@ -178,13 +184,13 @@ void KrpcProvider::SendRpcResponse(const muduo::net::TcpConnectionPtr &conn, goo
         // 序列化成功，通过网络把RPC方法执行的结果返回给RPC调用方
         conn->send(response_str);
     } else {
-        std::cout << "serialize error!" << std::endl;
+        KrpcLogger::ERROR("serialize response error!");
     }
     // conn->shutdown(); // 模拟HTTP短链接，由RpcProvider主动断开连接
 }
 
 // 析构函数，退出事件循环
 KrpcProvider::~KrpcProvider() {
-    std::cout << "~KrpcProvider()" << std::endl;
+    KrpcLogger::Info("~KrpcProvider()");
     event_loop.quit();  // 退出事件循环
 }

@@ -24,9 +24,9 @@ public:
     2. 服务提供者（callee）接收到请求后，调用下面重写的 Login 方法。
     */
     void Login(::google::protobuf::RpcController* controller,
-              const ::Kuser::LoginRequest* request,
-              ::Kuser::LoginResponse* response,
-              ::google::protobuf::Closure* done) {
+                const ::Kuser::LoginRequest* request,
+                ::Kuser::LoginResponse* response,
+                ::google::protobuf::Closure* done) override{
         // 从请求中获取用户名和密码
         std::string name = request->name();
         std::string pwd = request->pwd();
