@@ -88,22 +88,62 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
     }
 
     // 接收服务器的响应
-    // 使用固定大小的缓冲区接收响应数据，待优化
-    char recv_buf[1024] = {0};
-    int recv_size = 0;
-    if (-1 == (recv_size = recv(m_clientfd, recv_buf, 1024, 0))) {
-        char errtxt[512] = {};
-        std::cout << "recv error" << strerror_r(errno, errtxt, sizeof(errtxt)) << std::endl;  // 打印错误信息
-        controller->SetFailed(errtxt);  // 设置错误信息
+  // 1. 读取响应头（4字节长度）
+  char header_buf[4] = {0};
+  int header_read_size = 0;
+  while (header_read_size < 4) {
+    int len = recv(m_clientfd, header_buf + header_read_size,
+                   4 - header_read_size, 0);
+    if (len == -1) {
+      if (errno == EINTR)
+        continue;
+      char errtxt[512] = {0};
+      sprintf(errtxt, "recv header error! errno:%d", errno);
+      controller->SetFailed(errtxt);
+      close(m_clientfd);
+      return;
+    }
+    if (len == 0) {
+      controller->SetFailed("server closed connection");
+      close(m_clientfd);
         return;
     }
+    header_read_size += len;
+  }
 
-    // 将接收到的响应数据反序列化为response对象
-    if (!response->ParseFromArray(recv_buf, recv_size)) {
-        close(m_clientfd);  // 反序列化失败，关闭socket
-        char errtxt[512] = {};
-        std::cout << "parse error" << strerror_r(errno, errtxt, sizeof(errtxt)) << std::endl;  // 打印错误信息
-        controller->SetFailed(errtxt);  // 设置错误信息
+  // 2. 解析响应体长度
+  uint32_t body_len = 0;
+  memcpy(&body_len, header_buf, 4);
+  body_len = ntohl(body_len);
+
+  // 3. 读取响应体
+  std::string response_str;
+  response_str.resize(body_len);
+  uint32_t body_read_size = 0;
+  while (body_read_size < body_len) {
+    int len = recv(m_clientfd, &response_str[body_read_size],
+                   body_len - body_read_size, 0);
+    if (len == -1) {
+      if (errno == EINTR)
+        continue;
+      char errtxt[512] = {0};
+      sprintf(errtxt, "recv body error! errno:%d", errno);
+      controller->SetFailed(errtxt);
+      close(m_clientfd);
+      return;
+    }
+    if (len == 0) {
+      controller->SetFailed("server closed connection");
+      close(m_clientfd);
+      return;
+    }
+    body_read_size += len;
+  }
+
+  // 4. 反序列化
+  if (!response->ParseFromString(response_str)) {
+    controller->SetFailed("parse error! response_str:" + response_str);
+    close(m_clientfd);
         return;
     }
 

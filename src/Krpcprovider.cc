@@ -182,10 +182,15 @@ void KrpcProvider::SendRpcResponse(const muduo::net::TcpConnectionPtr &conn, goo
     std::string response_str;
     if (response->SerializeToString(&response_str)) {
         // 序列化成功，通过网络把RPC方法执行的结果返回给RPC调用方
-        conn->send(response_str);
-    } else {
+    // 定义响应头，存储响应体长度，解决TCP粘包问题
+    uint32_t len = htonl(response_str.size());
+    std::string send_str;
+    send_str.append(reinterpret_cast<char *>(&len), 4);
+    send_str.append(response_str);
+
+    conn->send(send_str);
+  } else
         KrpcLogger::ERROR("serialize response error!");
-    }
     // conn->shutdown(); // 模拟HTTP短链接，由RpcProvider主动断开连接
 }
 
