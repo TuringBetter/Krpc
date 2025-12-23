@@ -205,7 +205,7 @@ std::string KrpcChannel::QueryServiceHost(ZkClient *zkclient, std::string servic
 }
 
 // 构造函数，支持延迟连接
-KrpcChannel::KrpcChannel(bool connectNow) : m_clientfd(-1), m_idx(0) {
+KrpcChannel::KrpcChannel(bool connectNow) : m_idx(0), m_clientfd(-1) {
     if (!connectNow) {  // 如果不需要立即连接
         return;
     }
