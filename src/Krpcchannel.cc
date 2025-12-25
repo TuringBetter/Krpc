@@ -1,15 +1,18 @@
 #include "Krpcchannel.h"
-#include "Krpcheader.pb.h"
-#include "zookeeperutil.h"
-#include "Krpcapplication.h"
-#include "Krpccontroller.h"
-#include "memory"
+
+#include <arpa/inet.h>
 #include <errno.h>
-#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <arpa/inet.h>
+#include <unistd.h>
+
+#include <memory>
+
 #include "KrpcLogger.h"
+#include "Krpcapplication.h"
+#include "Krpccontroller.h"
+#include "Krpcheader.pb.h"
+#include "zookeeperutil.h"
 
 std::mutex g_data_mutx;  // 全局互斥锁，用于保护共享数据的线程安全
 
@@ -18,21 +21,22 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
                              ::google::protobuf::RpcController *controller,
                              const ::google::protobuf::Message *request,
                              ::google::protobuf::Message *response,
-                             ::google::protobuf::Closure *done)
-{
+                             ::google::protobuf::Closure *done) {
     if (-1 == m_clientfd) {  // 如果客户端socket未初始化
         // 获取服务对象名和方法名
         const google::protobuf::ServiceDescriptor *sd = method->service();
-        service_name = sd->name();  // 服务名
+        service_name = sd->name();     // 服务名
         method_name = method->name();  // 方法名
 
         // 客户端需要查询ZooKeeper，找到提供该服务的服务器地址
         ZkClient zkCli;
         zkCli.Start();  // 连接ZooKeeper服务器
-        std::string host_data = QueryServiceHost(&zkCli, service_name, method_name, m_idx);  // 查询服务地址
+        std::string host_data = QueryServiceHost(
+            &zkCli, service_name, method_name, m_idx);  // 查询服务地址
         m_ip = host_data.substr(0, m_idx);  // 从查询结果中提取IP地址
         std::cout << "ip: " << m_ip << std::endl;
-        m_port = atoi(host_data.substr(m_idx + 1, host_data.size() - m_idx).c_str());  // 从查询结果中提取端口号
+        m_port = atoi(host_data.substr(m_idx + 1, host_data.size() - m_idx)
+                          .c_str());  // 从查询结果中提取端口号
         std::cout << "port: " << m_port << std::endl;
 
         // 尝试连接服务器
@@ -48,7 +52,8 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
     uint32_t args_size{};
     std::string args_str;
     if (!request->SerializeToString(&args_str)) {  // 序列化请求参数
-        controller->SetFailed("serialize request fail");  // 序列化失败，设置错误信息
+        controller->SetFailed(
+            "serialize request fail");  // 序列化失败，设置错误信息
         return;
     }
     args_size = args_str.size();  // 获取序列化后的长度
@@ -56,14 +61,15 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
     // 定义RPC请求的头部信息
     Krpc::RpcHeader krpcheader;
     krpcheader.set_service_name(service_name);  // 设置服务名
-    krpcheader.set_method_name(method_name);  // 设置方法名
-    krpcheader.set_args_size(args_size);  // 设置参数长度
+    krpcheader.set_method_name(method_name);    // 设置方法名
+    krpcheader.set_args_size(args_size);        // 设置参数长度
 
     // 将RPC头部信息序列化为字符串，并计算其长度
     uint32_t header_size = 0;
     std::string rpc_header_str;
     if (!krpcheader.SerializeToString(&rpc_header_str)) {  // 序列化头部信息
-        controller->SetFailed("serialize rpc header error!");  // 序列化失败，设置错误信息
+        controller->SetFailed(
+            "serialize rpc header error!");  // 序列化失败，设置错误信息
         return;
     }
     header_size = rpc_header_str.size();  // 获取序列化后的长度
@@ -73,7 +79,8 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
     {
         google::protobuf::io::StringOutputStream string_output(&send_rpc_str);
         google::protobuf::io::CodedOutputStream coded_output(&string_output);
-        coded_output.WriteVarint32(static_cast<uint32_t>(header_size));  // 写入头部长度
+        coded_output.WriteVarint32(
+            static_cast<uint32_t>(header_size));   // 写入头部长度
         coded_output.WriteString(rpc_header_str);  // 写入头部信息
     }
     send_rpc_str += args_str;  // 拼接请求参数
@@ -82,72 +89,71 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
     if (-1 == send(m_clientfd, send_rpc_str.c_str(), send_rpc_str.size(), 0)) {
         close(m_clientfd);  // 发送失败，关闭socket
         char errtxt[512] = {};
-        std::cout << "send error: " << strerror_r(errno, errtxt, sizeof(errtxt)) << std::endl;  // 打印错误信息
+        std::cout << "send error: " << strerror_r(errno, errtxt, sizeof(errtxt))
+                  << std::endl;         // 打印错误信息
         controller->SetFailed(errtxt);  // 设置错误信息
         return;
     }
 
     // 接收服务器的响应
-  // 1. 读取响应头（4字节长度）
-  char header_buf[4] = {0};
-  int header_read_size = 0;
-  while (header_read_size < 4) {
-    int len = recv(m_clientfd, header_buf + header_read_size,
-                   4 - header_read_size, 0);
-    if (len == -1) {
-      if (errno == EINTR)
-        continue;
-      char errtxt[512] = {0};
-      sprintf(errtxt, "recv header error! errno:%d", errno);
-      controller->SetFailed(errtxt);
-      close(m_clientfd);
-      return;
+    // 1. 读取响应头（4字节长度）
+    char header_buf[4] = {0};
+    int header_read_size = 0;
+    while (header_read_size < 4) {
+        int len = recv(m_clientfd, header_buf + header_read_size,
+                       4 - header_read_size, 0);
+        if (len == -1) {
+            if (errno == EINTR) continue;
+            char errtxt[512] = {0};
+            sprintf(errtxt, "recv header error! errno:%d", errno);
+            controller->SetFailed(errtxt);
+            close(m_clientfd);
+            return;
+        }
+        if (len == 0) {
+            controller->SetFailed("server closed connection");
+            close(m_clientfd);
+            return;
+        }
+        header_read_size += len;
     }
-    if (len == 0) {
-      controller->SetFailed("server closed connection");
-      close(m_clientfd);
+
+    // 2. 解析响应体长度
+    uint32_t body_len = 0;
+    memcpy(&body_len, header_buf, 4);
+    body_len = ntohl(body_len);
+
+    // 3. 读取响应体
+    std::string response_str;
+    response_str.resize(body_len);
+    uint32_t body_read_size = 0;
+    while (body_read_size < body_len) {
+        int len = recv(m_clientfd, &response_str[body_read_size],
+                       body_len - body_read_size, 0);
+        if (len == -1) {
+            if (errno == EINTR) continue;
+            char errtxt[512] = {0};
+            sprintf(errtxt, "recv body error! errno:%d", errno);
+            controller->SetFailed(errtxt);
+            close(m_clientfd);
+            return;
+        }
+        if (len == 0) {
+            controller->SetFailed("server closed connection");
+            close(m_clientfd);
+            return;
+        }
+        body_read_size += len;
+    }
+
+    // 4. 反序列化
+    if (!response->ParseFromString(response_str)) {
+        controller->SetFailed("parse error! response_str:" + response_str);
+        close(m_clientfd);
         return;
     }
-    header_read_size += len;
-  }
 
-  // 2. 解析响应体长度
-  uint32_t body_len = 0;
-  memcpy(&body_len, header_buf, 4);
-  body_len = ntohl(body_len);
-
-  // 3. 读取响应体
-  std::string response_str;
-  response_str.resize(body_len);
-  uint32_t body_read_size = 0;
-  while (body_read_size < body_len) {
-    int len = recv(m_clientfd, &response_str[body_read_size],
-                   body_len - body_read_size, 0);
-    if (len == -1) {
-      if (errno == EINTR)
-        continue;
-      char errtxt[512] = {0};
-      sprintf(errtxt, "recv body error! errno:%d", errno);
-      controller->SetFailed(errtxt);
-      close(m_clientfd);
-      return;
-    }
-    if (len == 0) {
-      controller->SetFailed("server closed connection");
-      close(m_clientfd);
-      return;
-    }
-    body_read_size += len;
-  }
-
-  // 4. 反序列化
-  if (!response->ParseFromString(response_str)) {
-    controller->SetFailed("parse error! response_str:" + response_str);
-    close(m_clientfd);
-        return;
-    }
-
-   // close(m_clientfd);  // 关闭socket连接
+    // close(m_clientfd);  // 关闭socket连接
 }
 
 // 创建新的socket连接
@@ -156,22 +162,26 @@ bool KrpcChannel::newConnect(const char *ip, uint16_t port) {
     int clientfd = socket(AF_INET, SOCK_STREAM, 0);
     if (-1 == clientfd) {
         char errtxt[512] = {0};
-        std::cout << "socket error" << strerror_r(errno, errtxt, sizeof(errtxt)) << std::endl;  // 打印错误信息
+        std::cout << "socket error" << strerror_r(errno, errtxt, sizeof(errtxt))
+                  << std::endl;                   // 打印错误信息
         LOG(ERROR) << "socket error:" << errtxt;  // 记录错误日志
         return false;
     }
 
     // 设置服务器地址信息
     struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;  // IPv4地址族
-    server_addr.sin_port = htons(port);  // 端口号
+    server_addr.sin_family = AF_INET;             // IPv4地址族
+    server_addr.sin_port = htons(port);           // 端口号
     server_addr.sin_addr.s_addr = inet_addr(ip);  // IP地址
 
     // 尝试连接服务器
-    if (-1 == connect(clientfd, (struct sockaddr *)&server_addr, sizeof(server_addr))) {
+    if (-1 == connect(clientfd, (struct sockaddr *)&server_addr,
+                      sizeof(server_addr))) {
         close(clientfd);  // 连接失败，关闭socket
         char errtxt[512] = {0};
-        std::cout << "connect error" << strerror_r(errno, errtxt, sizeof(errtxt)) << std::endl;  // 打印错误信息
+        std::cout << "connect error"
+                  << strerror_r(errno, errtxt, sizeof(errtxt))
+                  << std::endl;                          // 打印错误信息
         LOG(ERROR) << "connect server error" << errtxt;  // 记录错误日志
         return false;
     }
@@ -181,22 +191,26 @@ bool KrpcChannel::newConnect(const char *ip, uint16_t port) {
 }
 
 // 从ZooKeeper查询服务地址
-std::string KrpcChannel::QueryServiceHost(ZkClient *zkclient, std::string service_name, std::string method_name, int &idx) {
-    std::string method_path = "/" + service_name + "/" + method_name;  // 构造ZooKeeper路径
+std::string KrpcChannel::QueryServiceHost(ZkClient *zkclient,
+                                          std::string service_name,
+                                          std::string method_name, int &idx) {
+    std::string method_path =
+        "/" + service_name + "/" + method_name;  // 构造ZooKeeper路径
     std::cout << "method_path: " << method_path << std::endl;
     LOG(INFO) << "method_path: " << method_path;
 
     std::unique_lock<std::mutex> lock(g_data_mutx);  // 加锁，保证线程安全
-    std::string host_data_1 = zkclient->GetData(method_path.c_str());  // 从ZooKeeper获取数据
-    lock.unlock();  // 解锁
+    std::string host_data_1 =
+        zkclient->GetData(method_path.c_str());  // 从ZooKeeper获取数据
+    lock.unlock();                               // 解锁
 
-    if (host_data_1 == "") {  // 如果未找到服务地址
+    if (host_data_1 == "") {                           // 如果未找到服务地址
         LOG(ERROR) << method_path + " is not exist!";  // 记录错误日志
         return " ";
     }
 
     idx = host_data_1.find(":");  // 查找IP和端口的分隔符
-    if (idx == -1) {  // 如果分隔符不存在
+    if (idx == -1) {              // 如果分隔符不存在
         LOG(ERROR) << method_path + " address is invalid!";  // 记录错误日志
         return " ";
     }
@@ -216,5 +230,4 @@ KrpcChannel::KrpcChannel(bool connectNow) : m_idx(0), m_clientfd(-1) {
     while (!rt && count--) {
         rt = newConnect(m_ip.c_str(), m_port);
     }
-
 }

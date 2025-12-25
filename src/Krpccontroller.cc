@@ -23,9 +23,9 @@ std::string Krpccontroller::ErrorText() const {
 }
 
 // 设置RPC调用失败，并记录失败原因
-void Krpccontroller::SetFailed(const std::string &reason) {
-    m_failed = true;   // 设置失败标志
-    m_errText = reason; // 记录失败原因
+void Krpccontroller::SetFailed(const std::string& reason) {
+    m_failed = true;     // 设置失败标志
+    m_errText = reason;  // 记录失败原因
 }
 
 // 以下功能未实现，是RPC服务端提供的取消功能

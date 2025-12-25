@@ -1,8 +1,10 @@
 #include "Krpcprovider.h"
+
+#include <iostream>
+
+#include "KrpcLogger.h"
 #include "Krpcapplication.h"
 #include "Krpcheader.pb.h"
-#include "KrpcLogger.h"
-#include <iostream>
 
 // 注册服务对象及其方法，以便服务端能够处理客户端的RPC请求
 void KrpcProvider::NotifyService(google::protobuf::Service *service) {
@@ -10,12 +12,14 @@ void KrpcProvider::NotifyService(google::protobuf::Service *service) {
     // 这些信息会保存在一个数据结构（如 ServiceInfo）中。
     ServiceInfo service_info;
 
-    // 参数类型设置为 google::protobuf::Service，是因为所有由 protobuf 生成的服务类
-    // 都继承自 google::protobuf::Service，这样我们可以通过基类指针指向子类对象，
+    // 参数类型设置为 google::protobuf::Service，是因为所有由 protobuf
+    // 生成的服务类 都继承自
+    // google::protobuf::Service，这样我们可以通过基类指针指向子类对象，
     // 实现动态多态。
 
     // 通过动态多态调用 service->GetDescriptor()，
-    // GetDescriptor() 方法会返回 protobuf 生成的服务类的描述信息（ServiceDescriptor）。
+    // GetDescriptor() 方法会返回 protobuf
+    // 生成的服务类的描述信息（ServiceDescriptor）。
     const google::protobuf::ServiceDescriptor *psd = service->GetDescriptor();
 
     // 通过 ServiceDescriptor，我们可以获取该服务类中定义的方法列表，
@@ -35,29 +39,40 @@ void KrpcProvider::NotifyService(google::protobuf::Service *service) {
         const google::protobuf::MethodDescriptor *pmd = psd->method(i);
         std::string method_name = pmd->name();
         std::cout << "method_name=" << method_name << std::endl;
-        service_info.method_map.emplace(method_name, pmd);  // 将方法名和方法描述符存入map
+        service_info.method_map.emplace(method_name,
+                                        pmd);  // 将方法名和方法描述符存入map
     }
-    service_info.service = service;  // 保存服务对象
+    service_info.service = service;                   // 保存服务对象
     service_map.emplace(service_name, service_info);  // 将服务信息存入服务map
 }
 
 // 启动RPC服务节点，开始提供远程网络调用服务
 void KrpcProvider::Run() {
     // 读取配置文件中的RPC服务器IP和端口
-    std::string ip = KrpcApplication::GetInstance().GetConfig().Load("rpcserverip");
-    int port = atoi(KrpcApplication::GetInstance().GetConfig().Load("rpcserverport").c_str());
+    std::string ip =
+        KrpcApplication::GetInstance().GetConfig().Load("rpcserverip");
+    int port = atoi(KrpcApplication::GetInstance()
+                        .GetConfig()
+                        .Load("rpcserverport")
+                        .c_str());
 
     // 使用muduo网络库，创建地址对象
     muduo::net::InetAddress address(ip, port);
 
     // 创建TcpServer对象
-    std::shared_ptr<muduo::net::TcpServer> server = std::make_shared<muduo::net::TcpServer>(&event_loop, address, "KrpcProvider");
+    std::shared_ptr<muduo::net::TcpServer> server =
+        std::make_shared<muduo::net::TcpServer>(&event_loop, address,
+                                                "KrpcProvider");
 
     // 绑定连接回调和消息回调，分离网络连接业务和消息处理业务
     // TCP 连接的状态发生变化（建立 或 断开）时，都会触发该回调。
-    server->setConnectionCallback(std::bind(&KrpcProvider::OnConnection, this, std::placeholders::_1));
-    // socket 可读时，在 TcpConnection::handleRead 成功读取到字节后调用 messageCallback。
-    server->setMessageCallback(std::bind(&KrpcProvider::OnMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    server->setConnectionCallback(
+        std::bind(&KrpcProvider::OnConnection, this, std::placeholders::_1));
+    // socket 可读时，在 TcpConnection::handleRead 成功读取到字节后调用
+    // messageCallback。
+    server->setMessageCallback(
+        std::bind(&KrpcProvider::OnMessage, this, std::placeholders::_1,
+                  std::placeholders::_2, std::placeholders::_3));
 
     // 设置muduo库的线程数量
     server->setThreadNum(4);
@@ -73,14 +88,17 @@ void KrpcProvider::Run() {
         for (auto &mp : sp.second.method_map) {
             std::string method_path = service_path + "/" + mp.first;
             char method_path_data[128] = {0};
-            sprintf(method_path_data, "%s:%d", ip.c_str(), port);  // 将IP和端口信息存入节点数据
+            sprintf(method_path_data, "%s:%d", ip.c_str(),
+                    port);  // 将IP和端口信息存入节点数据
             // ZOO_EPHEMERAL表示这个节点是临时节点，在客户端断开连接后，ZooKeeper会自动删除这个节点
-            zkclient.Create(method_path.c_str(), method_path_data, strlen(method_path_data), ZOO_EPHEMERAL);
+            zkclient.Create(method_path.c_str(), method_path_data,
+                            strlen(method_path_data), ZOO_EPHEMERAL);
         }
     }
 
     // RPC服务端准备启动，打印信息
-    KrpcLogger::Info("KrpcProvider start service at ip:" + ip + " port:" + std::to_string(port));
+    KrpcLogger::Info("KrpcProvider start service at ip:" + ip +
+                     " port:" + std::to_string(port));
 
     // 启动网络服务
     server->start();
@@ -93,19 +111,21 @@ void KrpcProvider::OnConnection(const muduo::net::TcpConnectionPtr &conn) {
         // 如果连接关闭，则断开连接
         conn->shutdown();
         KrpcLogger::Info("client disconnected!");
-    }
-    else// 连接建立成功
+    } else  // 连接建立成功
         KrpcLogger::Info("client connected!");
 }
 
 // 消息回调函数，处理客户端发送的RPC请求
-void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::net::Buffer *buffer, muduo::Timestamp receive_time) {
+void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn,
+                             muduo::net::Buffer *buffer,
+                             muduo::Timestamp receive_time) {
     KrpcLogger::Info("receive message from client!");
     // 从网络缓冲区中读取远程RPC调用请求的字符流
     std::string recv_buf = buffer->retrieveAllAsString();
 
     // 使用protobuf的CodedInputStream反序列化RPC请求
-    google::protobuf::io::ArrayInputStream raw_input(recv_buf.data(), recv_buf.size());
+    google::protobuf::io::ArrayInputStream raw_input(recv_buf.data(),
+                                                     recv_buf.size());
     google::protobuf::io::CodedInputStream coded_input(&raw_input);
 
     uint32_t header_size{};
@@ -116,7 +136,8 @@ void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::ne
     Krpc::RpcHeader krpcHeader;
 
     // 设置读取限制
-    google::protobuf::io::CodedInputStream::Limit msg_limit = coded_input.PushLimit(header_size);
+    google::protobuf::io::CodedInputStream::Limit msg_limit =
+        coded_input.PushLimit(header_size);
     coded_input.ReadString(&rpc_header_str, header_size);
     // 恢复之前的限制，以便安全地继续读取其他数据
     coded_input.PopLimit(msg_limit);
@@ -151,45 +172,49 @@ void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::ne
     }
 
     google::protobuf::Service *service = it->second.service;  // 获取服务对象
-    const google::protobuf::MethodDescriptor *method = mit->second;  // 获取方法对象
+    const google::protobuf::MethodDescriptor *method =
+        mit->second;  // 获取方法对象
 
     // 生成RPC方法调用请求的request和响应的response参数
-    google::protobuf::Message *request = service->GetRequestPrototype(method).New();  // 动态创建请求对象
+    google::protobuf::Message *request =
+        service->GetRequestPrototype(method).New();  // 动态创建请求对象
     if (!request->ParseFromString(args_str)) {
         KrpcLogger::ERROR(service_name + "." + method_name + " parse error!");
         return;
     }
-    google::protobuf::Message *response = service->GetResponsePrototype(method).New();  // 动态创建响应对象
+    google::protobuf::Message *response =
+        service->GetResponsePrototype(method).New();  // 动态创建响应对象
 
     // 绑定回调函数，用于在方法调用完成后发送响应，相当于Protobuf 版的 std::bind
     google::protobuf::Closure *done = google::protobuf::NewCallback<
-                                          KrpcProvider,                             // 【1】 类的类型
-                                          const muduo::net::TcpConnectionPtr &,     // 【2】 函数参数1的类型
-                                          google::protobuf::Message *               // 【3】 函数参数2的类型
-                                        >(
-                                          this,                                     // 类的实例（对象指针）
-                                          &KrpcProvider::SendRpcResponse,           // 类的成员函数指针
-                                          conn,                                     // 函数参数1的实际值
-                                          response                                  // 函数参数2的实际值
-                                        );
+        KrpcProvider,                          // 【1】 类的类型
+        const muduo::net::TcpConnectionPtr &,  // 【2】 函数参数1的类型
+        google::protobuf::Message *            // 【3】 函数参数2的类型
+        >(this,                                // 类的实例（对象指针）
+          &KrpcProvider::SendRpcResponse,      // 类的成员函数指针
+          conn,                                // 函数参数1的实际值
+          response                             // 函数参数2的实际值
+    );
 
     // 在框架上根据远端RPC请求，调用当前RPC节点上发布的方法
-    service->CallMethod(method, nullptr, request, response, done);  // 调用服务方法
+    service->CallMethod(method, nullptr, request, response,
+                        done);  // 调用服务方法
 }
 
 // 发送RPC响应给客户端
-void KrpcProvider::SendRpcResponse(const muduo::net::TcpConnectionPtr &conn, google::protobuf::Message *response) {
+void KrpcProvider::SendRpcResponse(const muduo::net::TcpConnectionPtr &conn,
+                                   google::protobuf::Message *response) {
     std::string response_str;
     if (response->SerializeToString(&response_str)) {
         // 序列化成功，通过网络把RPC方法执行的结果返回给RPC调用方
-    // 定义响应头，存储响应体长度，解决TCP粘包问题
-    uint32_t len = htonl(response_str.size());
-    std::string send_str;
-    send_str.append(reinterpret_cast<char *>(&len), 4);
-    send_str.append(response_str);
+        // 定义响应头，存储响应体长度，解决TCP粘包问题
+        uint32_t len = htonl(response_str.size());
+        std::string send_str;
+        send_str.append(reinterpret_cast<char *>(&len), 4);
+        send_str.append(response_str);
 
-    conn->send(send_str);
-  } else
+        conn->send(send_str);
+    } else
         KrpcLogger::ERROR("serialize response error!");
     // conn->shutdown(); // 模拟HTTP短链接，由RpcProvider主动断开连接
 }

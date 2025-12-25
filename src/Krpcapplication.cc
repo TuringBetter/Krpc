@@ -1,13 +1,18 @@
 #include "Krpcapplication.h"
-#include<cstdlib>
-#include<unistd.h>
+
+#include <unistd.h>
+
+#include <cstdlib>
+#include <iostream>
+#include <string>
 
 Krpcconfig KrpcApplication::m_config;  // 全局配置对象
-std::mutex KrpcApplication::m_mutex;  // 用于线程安全的互斥锁
-KrpcApplication* KrpcApplication::m_application = nullptr;  // 单例对象指针，初始为空
+std::mutex KrpcApplication::m_mutex;   // 用于线程安全的互斥锁
+KrpcApplication* KrpcApplication::m_application =
+    nullptr;  // 单例对象指针，初始为空
 
 // 初始化函数，用于解析命令行参数并加载配置文件
-void KrpcApplication::Init(int argc, char **argv) {
+void KrpcApplication::Init(int argc, char** argv) {
     if (argc < 2) {  // 如果命令行参数少于2个，说明没有指定配置文件
         std::cout << "格式: command -i <配置文件路径>" << std::endl;
         exit(EXIT_FAILURE);  // 退出程序
@@ -39,9 +44,9 @@ void KrpcApplication::Init(int argc, char **argv) {
 }
 
 // 获取单例对象的引用，保证全局只有一个实例
-KrpcApplication &KrpcApplication::GetInstance() {
+KrpcApplication& KrpcApplication::GetInstance() {
     std::lock_guard<std::mutex> lock(m_mutex);  // 加锁，保证线程安全
-    if (m_application == nullptr) {  // 如果单例对象还未创建
+    if (m_application == nullptr) {             // 如果单例对象还未创建
         m_application = new KrpcApplication();  // 创建单例对象
         atexit(deleteInstance);  // 注册atexit函数，程序退出时自动销毁单例对象
     }
@@ -50,12 +55,10 @@ KrpcApplication &KrpcApplication::GetInstance() {
 
 // 程序退出时自动调用的函数，用于销毁单例对象
 void KrpcApplication::deleteInstance() {
-    if (m_application) {  // 如果单例对象存在
+    if (m_application) {       // 如果单例对象存在
         delete m_application;  // 销毁单例对象
     }
 }
 
 // 获取全局配置对象的引用
-Krpcconfig& KrpcApplication::GetConfig() {
-    return m_config;
-}
+Krpcconfig& KrpcApplication::GetConfig() { return m_config; }

@@ -1,15 +1,16 @@
 #include "Krpcconfig.h"
-#include "memory"
+
+#include <memory>
 
 // 加载配置文件，解析配置文件中的键值对
 void Krpcconfig::LoadConfigFile(const char *config_file) {
     // 使用智能指针管理文件指针，确保文件在退出时自动关闭
     std::unique_ptr<FILE, decltype(&fclose)> pf(
         fopen(config_file, "r"),  // 打开配置文件
-        &fclose  // 文件关闭函数
+        &fclose                   // 文件关闭函数
     );
 
-    if (pf == nullptr) {  // 如果文件打开失败
+    if (pf == nullptr) {     // 如果文件打开失败
         exit(EXIT_FAILURE);  // 退出程序
     }
 
@@ -17,7 +18,7 @@ void Krpcconfig::LoadConfigFile(const char *config_file) {
     // 使用pf.get()方法获取原始指针，逐行读取文件内容
     while (fgets(buf, 1024, pf.get()) != nullptr) {
         std::string read_buf(buf);  // 将读取的内容转换为字符串
-        Trim(read_buf);  // 去掉字符串前后的空格
+        Trim(read_buf);             // 去掉字符串前后的空格
 
         // 忽略注释行（以#开头）和空行
         if (read_buf[0] == '#' || read_buf.empty()) continue;
@@ -44,8 +45,8 @@ void Krpcconfig::LoadConfigFile(const char *config_file) {
 // 根据key查找对应的value
 std::string Krpcconfig::Load(const std::string &key) {
     auto it = config_map.find(key);  // 在map中查找key
-    if (it == config_map.end()) {  // 如果未找到
-        return "";  // 返回空字符串
+    if (it == config_map.end()) {    // 如果未找到
+        return "";                   // 返回空字符串
     }
     return it->second;  // 返回对应的value
 }
@@ -55,12 +56,13 @@ void Krpcconfig::Trim(std::string &read_buf) {
     // 去掉字符串前面的空格
     int index = read_buf.find_first_not_of(' ');
     if (index != -1) {  // 如果找到非空格字符
-        read_buf = read_buf.substr(index, read_buf.size() - index);  // 截取字符串
+        read_buf =
+            read_buf.substr(index, read_buf.size() - index);  // 截取字符串
     }
 
     // 去掉字符串后面的空格
     index = read_buf.find_last_not_of(' ');
-    if (index != -1) {  // 如果找到非空格字符
+    if (index != -1) {                             // 如果找到非空格字符
         read_buf = read_buf.substr(0, index + 1);  // 截取字符串
     }
 }
