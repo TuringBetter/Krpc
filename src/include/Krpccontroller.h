@@ -19,9 +19,15 @@ public:
     bool IsCanceled() const;
     void NotifyOnCancel(google::protobuf::Closure* callback);
 
+    // 设置超时时间，单位ms
+    void SetTimeout(int timeout);
+    // 获取超时时间
+    int GetTimeout() const;
+
 private:
     bool m_failed;          // RPC方法执行过程中的状态
     std::string m_errText;  // RPC方法执行过程中的错误信息
+    int m_timeout;          // 超时时间，单位ms
 };
 
 #endif

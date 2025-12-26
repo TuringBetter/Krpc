@@ -94,6 +94,22 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
     }
 
     // 接收服务器的响应
+    // 设置超时
+    if (controller) {
+        Krpccontroller *krpc_controller =
+            dynamic_cast<Krpccontroller *>(controller);
+        if (krpc_controller) {
+            int timeout = krpc_controller->GetTimeout();
+            if (timeout > 0) {
+                struct timeval tv;
+                tv.tv_sec = timeout / 1000;
+                tv.tv_usec = (timeout % 1000) * 1000;
+                setsockopt(m_clientfd, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                           sizeof(tv));
+            }
+        }
+    }
+
     // 1. 读取响应头（4字节长度）
     char header_buf[4] = {0};
     int header_read_size = 0;
@@ -102,6 +118,11 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
                        4 - header_read_size, 0);
         if (len == -1) {
             if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                controller->SetFailed("rpc call timeout!");
+                close(m_clientfd);
+                return;
+            }
             char errtxt[512] = {0};
             sprintf(errtxt, "recv header error! errno:%d", errno);
             controller->SetFailed(errtxt);
@@ -130,6 +151,11 @@ void KrpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor *method,
                        body_len - body_read_size, 0);
         if (len == -1) {
             if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                controller->SetFailed("rpc call timeout!");
+                close(m_clientfd);
+                return;
+            }
             char errtxt[512] = {0};
             sprintf(errtxt, "recv body error! errno:%d", errno);
             controller->SetFailed(errtxt);

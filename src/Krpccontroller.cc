@@ -4,6 +4,7 @@
 Krpccontroller::Krpccontroller() {
     m_failed = false;  // 初始状态为未失败
     m_errText = "";    // 错误信息初始为空
+    m_timeout = 0;     // 默认无超时
 }
 
 // 重置控制器状态，将失败标志和错误信息清空
@@ -43,3 +44,9 @@ bool Krpccontroller::IsCanceled() const {
 void Krpccontroller::NotifyOnCancel(google::protobuf::Closure* callback) {
     // 目前为空，未实现具体功能
 }
+
+// 设置超时时间
+void Krpccontroller::SetTimeout(int timeout) { m_timeout = timeout; }
+
+// 获取超时时间
+int Krpccontroller::GetTimeout() const { return m_timeout; }
