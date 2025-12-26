@@ -6,8 +6,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <memory>
-
 #include "KrpcLogger.h"
 #include "Krpcapplication.h"
 #include "Krpccontroller.h"

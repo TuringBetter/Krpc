@@ -1,10 +1,11 @@
 #include "Krpcprovider.h"
 
 #include <iostream>
-
+#include <functional>
 #include "KrpcLogger.h"
 #include "Krpcapplication.h"
 #include "Krpcheader.pb.h"
+#include "zookeeperutil.h"
 
 // 注册服务对象及其方法，以便服务端能够处理客户端的RPC请求
 void KrpcProvider::NotifyService(google::protobuf::Service *service) {

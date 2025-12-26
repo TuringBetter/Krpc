@@ -65,8 +65,7 @@ int main(int argc, char **argv) {
 
     // 启动多线程进行并发测试
     for (int i = 0; i < thread_count; i++) {
-        threads.emplace_back([argc, argv, i, &success_count, &fail_count,
-                              requests_per_thread]() {
+        threads.emplace_back([i, &success_count, &fail_count]() {
             send_request(i, success_count, fail_count,
                          requests_per_thread);  // 每个线程发送指定数量的请求
         });

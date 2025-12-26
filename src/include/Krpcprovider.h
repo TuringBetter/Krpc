@@ -6,12 +6,10 @@
 #include <muduo/net/TcpConnection.h>
 #include <muduo/net/TcpServer.h>
 
-#include <functional>
 #include <string>
 #include <unordered_map>
 
 #include "google/protobuf/service.h"
-#include "zookeeperutil.h"
 
 class KrpcProvider {
 public:
