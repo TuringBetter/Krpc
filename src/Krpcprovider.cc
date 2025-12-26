@@ -50,9 +50,9 @@ void KrpcProvider::NotifyService(google::protobuf::Service *service) {
 void KrpcProvider::Run() {
     // 读取配置文件中的RPC服务器IP和端口
     std::string ip =
-        KrpcApplication::GetInstance().GetConfig().Load("rpcserverip");
+        KrpcApplication::GetInstance()->GetConfig().Load("rpcserverip");
     int port = atoi(KrpcApplication::GetInstance()
-                        .GetConfig()
+                        ->GetConfig()
                         .Load("rpcserverport")
                         .c_str());
 

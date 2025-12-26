@@ -36,9 +36,9 @@ ZkClient::~ZkClient() {
 void ZkClient::Start() {
     // 从配置文件中读取ZooKeeper服务器的IP和端口
     std::string host =
-        KrpcApplication::GetInstance().GetConfig().Load("zookeeperip");
+        KrpcApplication::GetInstance()->GetConfig().Load("zookeeperip");
     std::string port =
-        KrpcApplication::GetInstance().GetConfig().Load("zookeeperport");
+        KrpcApplication::GetInstance()->GetConfig().Load("zookeeperport");
     std::string connstr = host + ":" + port;  // 拼接连接字符串
 
     /*
